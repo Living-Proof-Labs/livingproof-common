@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Adapted from collaboration-guidelines v4.2.1 templates/python/Taskfile.yml.
+version: '3'
+tasks:
+  setup:
+    desc: Sync pinned dependencies without installing host Python tools
+    cmds:
+      - uv sync --locked --no-python-downloads
+  check:
+    desc: Run locked Ruff
+    cmds:
+      - uv run --locked --no-sync ruff check .
+  test:
+    desc: Run real Git and artifact tests with JUnit and software coverage
+    cmds:
+      - uv run --locked --no-sync coverage run --source=livingproof_common -m pytest --junitxml=artifacts/tests.xml
+      - uv run --locked --no-sync coverage html -d artifacts/coverage
+  docs:
+    desc: Generate library API and Task reference, checking Sphinx warnings
+    cmds:
+      - uv run --locked --no-sync python tools/docs.py
+  verify:
+    desc: Check code, test behavior and build documentation
+    cmds:
+      - task: check
+      - task: test
+      - task: docs
+  package:
+    desc: Build the wheel, source archive and architecture-independent Debian library
+    cmds:
+      - uv run --locked --no-sync python tools/package.py
