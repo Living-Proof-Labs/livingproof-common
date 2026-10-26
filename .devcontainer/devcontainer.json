@@ -1,0 +1,8 @@
+{
+  "name": "Living Proof Labs common library",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "tooling",
+  "workspaceFolder": "/workspace/common",
+  "remoteUser": "vscode",
+  "postCreateCommand": "task -t Taskfile.runtime.yml setup"
+}
