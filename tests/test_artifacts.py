@@ -63,3 +63,60 @@ def test_built_wheel_and_source_archive_retain_provenance(tmp_path):
 
 
 
+
+
+def test_two_installed_consumers_keep_distinct_build_identity(tmp_path):
+    import sys
+    import zipfile
+
+    library = tmp_path / 'library'
+    library.mkdir()
+    subprocess.run(['uv', 'build', '--offline', '--wheel', '--out-dir', str(library)],
+                   cwd=Path(__file__).parents[1], check=True, capture_output=True)
+    wheel = next(library.glob('*.whl'))
+    installed = tmp_path / 'installed'
+    with zipfile.ZipFile(wheel) as archive:
+        archive.extractall(installed)
+    for number, name in enumerate(['fixture_root', 'fixture_reporter'], start=5):
+        root = tmp_path / name
+        package = root / 'src' / name
+        package.mkdir(parents=True)
+        (package / '__init__.py').write_text('')
+        (root / '.gitignore').write_text(f'src/{name}/{PROVENANCE}\n__pycache__/\ndist/\n')
+        (root / 'pyproject.toml').write_text(f'''[build-system]
+requires = ["hatchling==1.27.0", "livingproof-common @ {wheel.as_uri()}"]
+build-backend = "hatchling.build"
+[project]
+name = "{name}"
+version = "{number}.0.0"
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+''')
+        (root / 'hatch_build.py').write_text(f'''from pathlib import Path
+from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+from livingproof_common.versioning import Consumer, record_build
+class CustomBuildHook(BuildHookInterface):
+    def initialize(self, version, build_data):
+        consumer = Consumer("{name}", Path(self.root) / "src/{name}")
+        build_data.setdefault("artifacts", []).append(
+            record_build(self.root, self.metadata.version, consumer))
+''')
+        git(root, 'init', '-b', 'main')
+        git(root, 'add', '.')
+        git(root, 'commit', '-m', 'consumer fixture')
+        git(root, 'tag', f'v{number}.0.0')
+        subprocess.run(['uv', 'build', '--offline', '--wheel', '--out-dir', str(tmp_path / name / 'dist')],
+                       cwd=root, check=True, capture_output=True)
+        with zipfile.ZipFile(next((root / 'dist').glob('*.whl'))) as archive:
+            archive.extractall(installed)
+    probe = '''import sys,json
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from livingproof_common.versioning import Consumer,current_version
+print(json.dumps([current_version(Consumer(name,Path(sys.argv[1])/name))
+                  for name in ('fixture_root','fixture_reporter')]))
+'''
+    output = subprocess.check_output([sys.executable, '-c', probe, str(installed)],
+                                     cwd=tmp_path, env={**os.environ, 'PATH': ''}, text=True)
+    assert json.loads(output) == [['5.0.0', '5.0.0', 'recorded-build'],
+                                 ['6.0.0', '6.0.0', 'recorded-build']]

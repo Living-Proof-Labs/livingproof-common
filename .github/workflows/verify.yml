@@ -50,6 +50,8 @@ jobs:
           name: Library tests (${{ matrix.runner }})
           path: artifacts/tests.xml
           reporter: python-xunit
+          use-actions-summary: 'false'
+          collapsed: never
           fail-on-error: 'true'
           fail-on-empty: 'true'
       - uses: actions/upload-artifact@v4

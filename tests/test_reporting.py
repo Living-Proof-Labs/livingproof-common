@@ -3,4 +3,5 @@ import os
 
 
 def test_reporting_failure_fixture():
-    assert os.environ.get("REPORTING_FAILURE_FIXTURE") != "1", "Deliberate reporting fixture"
+    enabled = os.environ.get("REPORTING_FAILURE_FIXTURE") == "1"
+    assert not enabled, "Deliberate reporting fixture"
