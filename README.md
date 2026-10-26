@@ -51,7 +51,27 @@ observation, not authenticated provenance. A clean exact `vX.Y.Z` release displa
 or malformed tags never hide an older valid release. Shallow history is explicit.
 
 Build hooks call `record_build(root, package_version, consumer)` and add the
-returned relative file to backend artifacts. Ignore `_build_provenance.json` in
+returned relative file to backend artifacts. For example, a consumer Hatch hook
+can use the released dependency directly:
+
+```python
+from pathlib import Path
+from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+from livingproof_common.versioning import Consumer, record_build
+
+class CustomBuildHook(BuildHookInterface):
+    def initialize(self, version, build_data):
+        consumer = Consumer("my-tool", Path(self.root) / "src/my_tool")
+        artifact = record_build(self.root, self.metadata.version, consumer)
+        build_data.setdefault("artifacts", []).append(artifact)
+```
+
+Add the same exact released `livingproof-common` version to the consumer's
+build-system requirements and runtime dependencies. Configure Hatch's custom hook
+path to this adapter. The adapter supplies context; all identity logic stays in
+the shared library. Two installed fixture consumers exercise this contract in CI.
+
+Ignore `_build_provenance.json` in
 Git. Hatch-VCS/setuptools-scm continue to own PEP 440 metadata; configure
 `local_scheme = "no-local-version"` for deterministic dirty metadata. Consumer
 build and runtime dependencies must both pin the published common library.

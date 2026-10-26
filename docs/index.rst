@@ -32,6 +32,9 @@ API reference
 Contributor tasks
 -----------------
 
+These are tasks inside the prepared container. Invoke them with
+``task -t Taskfile.runtime.yml TASK``; host ``task`` commands wrap Docker Compose.
+
 .. include:: tasks.rst
 
 Software test coverage
