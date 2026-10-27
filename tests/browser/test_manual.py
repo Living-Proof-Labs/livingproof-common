@@ -50,7 +50,7 @@ def test_navigation_search_and_assets(browser, server, width):
     page.goto(server + '/index.html')
     if width == 390:
         page.locator('label.md-header__button[for="__drawer"]:visible').first.click()
-    page.get_by_role('link', name='API reference', exact=True).first.click()
+    page.get_by_role('link', name='API', exact=True).first.click()
     expect(page.locator('article')).to_contain_text('current_version')
     page.goto(server + '/search.html?q=current_version')
     expect(page.locator('article')).to_contain_text('not automatically submitted')
@@ -119,3 +119,21 @@ def test_old_generated_indexes_reach_api(browser, server, filename):
     expect(page).to_have_url(server + '/api.html')
     expect(page.locator('article')).to_contain_text('current_version(consumer)')
     page.close()
+
+
+def test_navigation_and_revision_without_scripts(browser, server):
+    context = browser.new_context(java_script_enabled=False)
+    page = context.new_page()
+    record = json.loads((OUTPUT / 'html/build.json').read_text())
+    page.goto(server + '/contribute.html')
+    root = page.get_by_role('link', name='Documentation home', exact=True).first
+    expect(root).to_have_attribute('href', 'https://docs.livingprooflabs.com/')
+    root.focus()
+    expect(root).to_be_focused()
+    expect(page.get_by_role('link', name='Help / report an issue')).to_have_attribute(
+        'href', 'https://github.com/Living-Proof-Labs/livingproof-common/issues')
+    expect(page.get_by_role('link', name='Docs: development', exact=False)).to_have_attribute(
+        'href', 'https://github.com/Living-Proof-Labs/livingproof-common/tree/' + record['source_commit'])
+    page.goto(server + '/tasks.html')
+    expect(page.locator('article')).to_contain_text('uv run --locked --no-sync ruff check .')
+    context.close()

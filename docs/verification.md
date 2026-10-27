@@ -7,9 +7,9 @@ regressions, wheel/source-archive tests and two installed fixture consumers.
 It had no Markdown-rendered manual, explicit scenario inventory, browser checks,
 or Pages deployment. Raw tests already published individual JUnit cases.
 
-This adoption uses [collaboration-guidelines v5.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/tree/v5.0.0).
-It follows the [feature verification standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v5.0.0/docs/developer-interface.md#observable-behavior-and-feature-coverage)
-and [manual standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v5.0.0/docs/tool-usability.md).
+This adoption uses [collaboration-guidelines v6.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/tree/v6.0.0).
+It follows the [feature verification standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/docs/developer-interface.md#observable-behavior-and-feature-coverage)
+and [manual standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/docs/tool-usability.md).
 Zensical 0.0.73 follows the [reviewed root adoption](https://github.com/Living-Proof-Labs/livingproof/pull/16).
 Repository Markdown is staged from an explicit allowlist. API signatures and
 docstrings come from an installed candidate wheel, tasks from Task, and scenarios

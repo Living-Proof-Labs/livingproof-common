@@ -51,7 +51,7 @@ Install the release wheel with pip/uv; Debian consumers depend on
 `python3-livingproof-common` and install its downloaded `.deb` alongside theirs
 using apt. No apt repository is introduced.
 
-Release automation uses collaboration-guidelines **v4.2.1** (retained independently of the v5.0.0 guidance adoption), assembles a draft
+Release automation uses collaboration-guidelines **v4.2.1** (retained independently of the v6.0.0 guidance adoption), assembles a draft
 release only after verified main, tests installed packages and attaches artifacts
 before publication. Independent review controls merge. Reporter and root consumer
 migrations happen only after this library is released; plugin management stays root.

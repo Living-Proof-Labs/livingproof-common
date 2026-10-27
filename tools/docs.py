@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'artifacts/docs'
 SOURCES = {'README.md': 'index.md', 'docs/usage.md': 'usage.md',
            'docs/verification.md': 'verification.md', '.github/PAGES.md': 'pages.md',
-           'docs/search.md': 'search.md'}
+           'docs/search.md': 'search.md', 'docs/contribute.md': 'contribute.md'}
 
 
 def run(*args, **kwargs):
@@ -33,7 +33,10 @@ def main():
     assert report['source_commit'] == commit, 'Scenario report is from a different commit'
     assert report['source_digest'] == source_digest(ROOT), 'Scenario report has stale source inputs'
     assert report['scenarios'], 'Missing scenario inventory; run task test'
-    context = f'\n\nDevelopment manual: `{commit}` (dirty checkout: {str(dirty).lower()}). '
+    context = ('\n\n[Documentation home](https://docs.livingprooflabs.com/) | ' +
+               f'[Docs: development · {commit[:7]}](https://github.com/Living-Proof-Labs/'
+               f'livingproof-common/tree/{commit})\n\n'
+               f'Development manual: `{commit}` (dirty checkout: {str(dirty).lower()}). ')
     context += '[Build and test context](provenance.md).\n'
     for path, destination in SOURCES.items():
         text = (ROOT / path).read_text()
@@ -57,7 +60,8 @@ def main():
     lines = ['# Contributor tasks', '', 'Inside the prepared environment, use '
              '`task -t Taskfile.runtime.yml TASK`. Host tasks wrap Docker Compose.', '']
     for task in tasks['tasks']:
-        lines += [f"## {task['name']}", '', task['desc'], '']
+        summary = run('task', '-t', 'Taskfile.runtime.yml', '--summary', task['name'])
+        lines += [f"## {task['name']}", '', task['desc'], '', '```text', summary, '```', '']
     (source / 'tasks.md').write_text('\n'.join(lines) + context)
     lines = ['# Executable scenarios', '',
              'Generated from marked native pytest cases and their Given/When/Then docstrings. '
@@ -76,16 +80,16 @@ def main():
               'scenario_report_sha256': hashlib.sha256((source / 'scenarios.json').read_bytes()).hexdigest(),
               'workflow_run': ('https://github.com/Living-Proof-Labs/livingproof-common/actions/runs/'
                                + os.environ['GITHUB_RUN_ID'] if os.environ.get('GITHUB_RUN_ID') else None),
-              'guidelines': 'v5.0.0', 'guidelines_commit': 'dd4b0391a9a66fa7944f6655aac57c67d3f8c002'}
+              'guidelines': 'v6.0.0', 'guidelines_commit': '52a2f274576dab20e96ee1152b6c8d187cfbf377'}
     (source / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
-    (source / 'provenance.md').write_text('# Build context\n\n'
+    (source / 'provenance.md').write_text('<span id="build-context"></span>\n\n# Version and source\n\n'
         'This is development documentation for the exact source below, not a released manual. '
         'Historical manuals are unavailable; use the '
         '[release source tags](https://github.com/Living-Proof-Labs/livingproof-common/tags).\n\n'
         'The wheel is built and installed to generate API signatures and docstrings. '
         'Scenario tests separately build and exercise consumer wheels. '
         'Local results do not establish hosted CI or independent review.\n\n'
-        '```json\n' + json.dumps(record, indent=2) + '\n```\n\n[Build record](build.json)\n')
+        + context + '\n```json\n' + json.dumps(record, indent=2) + '\n```\n\n[Build record](build.json)\n')
     config = yaml.safe_load((ROOT / 'docs/mkdocs.yml').read_text())
     config.update(docs_dir='source', site_dir='html')
     (OUTPUT / 'mkdocs.yml').write_text(yaml.safe_dump(config, sort_keys=False))

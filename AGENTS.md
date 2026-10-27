@@ -1,8 +1,8 @@
 # Living Proof Labs common library
 
-Read and apply [collaboration-guidelines v5.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v5.0.0/AGENTS.md)
+Read and apply [collaboration-guidelines v6.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/AGENTS.md)
 and relevant procedures at that exact tag. Resolved adoption commit:
-`dd4b0391a9a66fa7944f6655aac57c67d3f8c002`.
+`52a2f274576dab20e96ee1152b6c8d187cfbf377`.
 
 Local additions: this is an Apache-2.0 library, without a CLI or plugin manager.
 Keep consumer identity explicit. Do not inspect caller working directories or
@@ -15,3 +15,9 @@ container use `task -t Taskfile.runtime.yml` instead. Retain raw test reports fo
 Documentation previews use the shared 14-day retention. Raw library test reports
 retain the existing 30-day window for consumer release diagnosis. Pages deployment is authorized only from verified main; write permissions stay
 on the deployment job. The parent owns repository settings and live acceptance.
+
+Current root, source-directory and related-manual links are navigation-only
+exceptions to version pinning. Guidance, templates, workflows and dependencies
+remain pinned independently. Apply the v6.0.0 documentation recipe; this library
+has no command interface or capability contract. No established private security
+reporting destination is documented; do not send sensitive reports to public issues.

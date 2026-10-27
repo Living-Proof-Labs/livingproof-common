@@ -49,3 +49,15 @@ def test_feature_summary_preserves_failed_and_skipped_results(tmp_path):
     junit.write_text('<incomplete')
     with pytest.raises(ET.ParseError):
         render(report, junit)
+
+
+def test_release_preserves_all_library_packages_without_image_archives():
+    """Source tarballs are packages, not Docker archives to remove under issue 29."""
+    from pathlib import Path
+    import yaml
+
+    workflow = yaml.safe_load((Path(__file__).parents[1] / '.github/workflows/verify.yml').read_text())
+    uploads = [step['run'] for job in workflow['jobs'].values()
+               for step in job.get('steps', [])
+               if 'gh release upload' in step.get('run', '')]
+    assert uploads == ['gh release upload "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/*.deb dist/SHA256SUMS']
