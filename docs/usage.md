@@ -1,5 +1,33 @@
 # Consumer usage
 
+## Install a release
+
+Python 3.11 or newer is required. This Linux shell example selects the published
+**v1.0.1** wheel explicitly; it is a reproducible example, not a moving latest-version
+recommendation or an instruction to upgrade existing consumers.
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install 'https://github.com/Living-Proof-Labs/livingproof-common/releases/download/v1.0.1/livingproof_common-1.0.1-py3-none-any.whl#sha256=949271786ddfd7d71682855cb6c236c441e2795aece080db80148d357e42c2df'
+```
+
+For a first check, ask the installed library for its own recorded identity:
+
+```sh
+.venv/bin/python -c 'from pathlib import Path; import livingproof_common; from livingproof_common.versioning import Consumer, current_version; print(current_version(Consumer("livingproof-common", Path(livingproof_common.__file__).parent)))'
+```
+
+Expect a three-item tuple: display identity, installed package version `1.0.1`,
+and identity source `recorded-build`. No Git checkout or CLI is required. When
+integrating your own package, use its distribution and directory as shown below;
+the library's identity is only the installation check.
+
+Debian consumers can download `python3-livingproof-common_1.0.1_all.deb` and
+`SHA256SUMS` from the [same release](https://github.com/Living-Proof-Labs/livingproof-common/releases/tag/v1.0.1),
+verify `sha256sum --check --ignore-missing SHA256SUMS`, and install with
+`sudo apt install ./python3-livingproof-common_1.0.1_all.deb` in their managed
+environment. No apt repository or PyPI publication is provided.
+
 ## Consumer contract
 
 ```python
@@ -53,4 +81,6 @@ The [Living Proof manual](https://docs.livingprooflabs.com/livingproof/) explain
 the consuming command home. This common package supplies identity only.
 
 Install a released wheel from [GitHub Releases](https://github.com/Living-Proof-Labs/livingproof-common/releases).
-The current verified release is v1.0.0; pin the same wheel in build and runtime dependencies.
+The installation example above selects a fixed release. Review release notes and
+test the chosen version with your consumer before changing its pin. Use the same
+exact wheel in build and runtime dependencies.

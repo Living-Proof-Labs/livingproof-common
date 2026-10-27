@@ -2,6 +2,9 @@
 import hashlib
 import json
 import os
+import posixpath
+import re
+from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,7 +19,48 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'artifacts/docs'
 SOURCES = {'README.md': 'index.md', 'docs/usage.md': 'usage.md',
            'docs/verification.md': 'verification.md', '.github/PAGES.md': 'pages.md',
-           'docs/search.md': 'search.md'}
+           'docs/search.md': 'search.md', 'docs/development.md': 'development.md',
+           'docs/contributing.md': 'contributing.md', 'docs/license.md': 'license.md'}
+REPOSITORY = 'https://github.com/Living-Proof-Labs/livingproof-common'
+GUIDELINES = 'v6.0.0'
+GUIDELINES_COMMIT = '52a2f274576dab20e96ee1152b6c8d187cfbf377'
+
+
+def rewrite_links(text, path):
+    def replace(match):
+        url = urlsplit(match[2])
+        if url.scheme or url.netloc or not url.path:
+            return match[0]
+        original = posixpath.normpath(posixpath.join(posixpath.dirname(path), url.path))
+        target = {**SOURCES, 'LICENSE': 'assets/LICENSE.txt'}.get(original)
+        if target is None:
+            return match[0]
+        return f'[{match[1]}]({urlunsplit(("", "", target, url.query, url.fragment))})'
+    return re.sub(r'\[([^\]]+)\]\(([^\s)]+)\)', replace, text)
+
+
+def task_reference():
+    lines = ['# Contributor tasks', '',
+             'Generated from the reviewed Taskfiles using native `--list --json` and '
+             '`--summary`. Summaries show commands without running task bodies.', '',
+             'Use host wrappers from a Docker-equipped host. Inside the prepared '
+             'container, use the runtime Taskfile directly; do not nest Docker wrappers.', '']
+    records = []
+    # Keep the original runtime-task fragment names, then namespace host summaries.
+    for filename, label, invocation in [
+            ('Taskfile.runtime.yml', 'Prepared container', 'task -t Taskfile.runtime.yml'),
+            ('Taskfile.yml', 'Host wrappers', 'task')]:
+        lines += [f'## {label}', '', f'Run `{invocation} TASK`.', '']
+        tasks = json.loads(run('task', '-t', filename, '--list', '--json'))
+        for task in tasks['tasks']:
+            summary = run('task', '-t', filename, '--summary', task['name'])
+            heading = task['name'] if filename == 'Taskfile.runtime.yml' else f"Host: {task['name']}"
+            lines += [f'### {heading}', '', task['desc'], '', '```text', summary, '```', '']
+            records.append({'taskfile': filename, 'name': task['name'], 'description': task['desc'],
+                            'summary': summary,
+                            'taskfile_sha256': hashlib.sha256((ROOT / filename).read_bytes()).hexdigest()})
+    return '\n'.join(lines), records
+
 
 
 def run(*args, **kwargs):
@@ -33,14 +77,18 @@ def main():
     assert report['source_commit'] == commit, 'Scenario report is from a different commit'
     assert report['source_digest'] == source_digest(ROOT), 'Scenario report has stale source inputs'
     assert report['scenarios'], 'Missing scenario inventory; run task test'
-    context = f'\n\nDevelopment manual: `{commit}` (dirty checkout: {str(dirty).lower()}). '
-    context += '[Build and test context](provenance.md).\n'
+    context = ('\n\n---\n\n'
+               '[Documentation home](https://docs.livingprooflabs.com/) · '
+               f'[Source]({REPOSITORY}/tree/{commit}) · '
+               f'[Help / report an issue]({REPOSITORY}/issues) · [License](license.md)\n\n'
+               f'[Docs: development · {commit[:12]}]({REPOSITORY}/tree/{commit}). '
+               f'Source revision: `{commit}` (dirty checkout: {str(dirty).lower()}). '
+               '[Version and source](provenance.md).\n')
     for path, destination in SOURCES.items():
-        text = (ROOT / path).read_text()
-        # This bounded allowlist is also the complete relative link mapping.
-        for original, target in SOURCES.items():
-            text = text.replace(f']({original})', f']({target})')
+        text = rewrite_links((ROOT / path).read_text(), path)
         (source / destination).write_text(text + context)
+    (source / 'assets').mkdir()
+    shutil.copyfile(ROOT / 'LICENSE', source / 'assets/LICENSE.txt')
     wheels = ROOT / 'artifacts/docs-wheel'
     shutil.rmtree(wheels, ignore_errors=True)
     subprocess.run(['uv', 'build', '--offline', '--wheel', '--out-dir', str(wheels)],
@@ -53,12 +101,9 @@ def main():
                    check=True)
     reference = run(str(python), '-I', str(ROOT / 'tools/api_reference.py'))
     (source / 'api.md').write_text(reference + context)
-    tasks = json.loads(run('task', '-t', 'Taskfile.runtime.yml', '--list', '--json'))
-    lines = ['# Contributor tasks', '', 'Inside the prepared environment, use '
-             '`task -t Taskfile.runtime.yml TASK`. Host tasks wrap Docker Compose.', '']
-    for task in tasks['tasks']:
-        lines += [f"## {task['name']}", '', task['desc'], '']
-    (source / 'tasks.md').write_text('\n'.join(lines) + context)
+    task_text, task_records = task_reference()
+    (source / 'tasks.md').write_text(task_text + context)
+    (source / 'task-reference.json').write_text(json.dumps(task_records, indent=2) + '\n')
     lines = ['# Executable scenarios', '',
              'Generated from marked native pytest cases and their Given/When/Then docstrings. '
              'Five named behaviors (seven collected cases), not exhaustive library coverage. '
@@ -76,16 +121,24 @@ def main():
               'scenario_report_sha256': hashlib.sha256((source / 'scenarios.json').read_bytes()).hexdigest(),
               'workflow_run': ('https://github.com/Living-Proof-Labs/livingproof-common/actions/runs/'
                                + os.environ['GITHUB_RUN_ID'] if os.environ.get('GITHUB_RUN_ID') else None),
-              'guidelines': 'v5.0.0', 'guidelines_commit': 'dd4b0391a9a66fa7944f6655aac57c67d3f8c002'}
+              'guidelines': GUIDELINES, 'guidelines_commit': GUIDELINES_COMMIT,
+              'candidate_package_version': run(str(python), '-I', '-c',
+                  'from importlib.metadata import version; print(version("livingproof-common"))'),
+              'task_reference_sha256': hashlib.sha256((source / 'task-reference.json').read_bytes()).hexdigest()}
     (source / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
-    (source / 'provenance.md').write_text('# Build context\n\n'
+    (source / 'provenance.md').write_text('# Version and source\n\n'
+        '<a id="build-context"></a>\n\n'
+        f'[Docs: development · {commit[:12]}]({REPOSITORY}/tree/{commit})\n\n'
+        f'Candidate package metadata: `{record["candidate_package_version"]}`. '
+        f'[Published package releases]({REPOSITORY}/releases) are a separate identity; '
+        'the installation guide selects a fixed release example, not a moving latest pin.\n\n'
         'This is development documentation for the exact source below, not a released manual. '
         'Historical manuals are unavailable; use the '
         '[release source tags](https://github.com/Living-Proof-Labs/livingproof-common/tags).\n\n'
         'The wheel is built and installed to generate API signatures and docstrings. '
         'Scenario tests separately build and exercise consumer wheels. '
         'Local results do not establish hosted CI or independent review.\n\n'
-        '```json\n' + json.dumps(record, indent=2) + '\n```\n\n[Build record](build.json)\n')
+        '```json\n' + json.dumps(record, indent=2) + '\n```\n\n[Build record](build.json) · [Task reference inputs](task-reference.json)\n' + context)
     config = yaml.safe_load((ROOT / 'docs/mkdocs.yml').read_text())
     config.update(docs_dir='source', site_dir='html')
     (OUTPUT / 'mkdocs.yml').write_text(yaml.safe_dump(config, sort_keys=False))

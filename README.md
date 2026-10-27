@@ -2,56 +2,39 @@
 
 Shared Python libraries for Living Proof Labs tools. Apache-2.0. **No CLI or plugin manager.**
 
-**Start here: [consumer documentation](docs/usage.md).** The rendered manual is
-currently a tested preview; live publication and verification remain pending.
-See [verification and preview instructions](docs/verification.md).
-
-## Develop with the existing environment
-
-The host needs Git, Docker Engine with Compose v2, and Task 3.54.0 on PATH.
-It needs permission to use the existing Docker daemon and public network access
-to GitHub, Docker Hub, ghcr.io, Debian package mirrors and Python package indexes.
-Python, uv, Git test tooling and Debian packaging tools run inside the container.
-No credentials, host Python installation or global settings changes are needed.
-
-```sh
-git clone https://github.com/Living-Proof-Labs/livingproof-common.git
-cd livingproof-common
-# For hosts whose checkout owner is not uid/gid 1000:
-export LOCAL_UID=$(id -u) LOCAL_GID=$(id -g)
-task setup
-task verify
-task package
-task smoke
-```
-
-`task setup` builds the pinned development image and synchronizes the committed
-lock. Other host tasks reuse that image and named dependency volumes. If Task is
-not on the saved environment PATH, that is a bootstrap gap, not a requirement to
-install Python. Do not bypass TLS or modify firewall/credentials to repair builds.
-Inside the development container, run `task -t Taskfile.runtime.yml verify`.
-It reuses the same Dockerfile and never requires nested Docker.
-
-Serve `artifacts/docs/html/` over HTTP for generated API/Task reference and
-`artifacts/coverage/index.html` for software coverage. Tests write
-`artifacts/tests.xml`; CI publishes individual cases and retains reports 30 days.
-Linux amd64 and arm64 are CI targets; macOS/Windows host behavior is unverified.
+**Start here: [documentation](https://docs.livingprooflabs.com/livingproof-common/).**
+[Documentation home](https://docs.livingprooflabs.com/) ·
+[Source](https://github.com/Living-Proof-Labs/livingproof-common) ·
+[Help / report an issue](https://github.com/Living-Proof-Labs/livingproof-common/issues) ·
+[License](docs/license.md)
 
 ## Consumer usage
 
-See [consumer usage and the build-hook example](docs/usage.md).
+Use Python 3.11 or newer. [Install a released wheel and run the identity example](docs/usage.md#install-a-release),
+then [add the consumer build hook](docs/usage.md#consumer-contract) to preserve your
+own package's identity in wheel and source builds. Debian packages are also
+available. This library supplies identity and build provenance; it does not run
+robots, manage plugins, or provide a command-line application.
+
+Consumer build and runtime requirements must pin the same tested release.
+The development manual's source revision and test-candidate metadata are separate
+from published package releases. See the manual's **Version and source** page.
+
+## Develop with the existing environment
+
+Contributors use the existing Docker/Task environment. Start with
+[developer setup](docs/development.md#develop-with-the-existing-environment).
+The manual generates both host-wrapper and prepared-container Task commands from
+the reviewed Taskfiles. [Verification and previews](docs/verification.md) explains
+individual test results, bounded scenarios, measured coverage and retained artifacts.
 
 ## Packages and release
 
-`VERSION=1.0.0 task package` builds a wheel, source distribution, and
-`python3-livingproof-common_1.0.0_all.deb` with SHA256SUMS. VERSION controls package
-metadata only; build identity still describes the actual checkout. There is no
-executable, runtime application container or PyPI publication in this change.
-Install the release wheel with pip/uv; Debian consumers depend on
-`python3-livingproof-common` and install its downloaded `.deb` alongside theirs
-using apt. No apt repository is introduced.
+See [package and release operations](docs/development.md#packages-and-release).
+For the selected release's artifacts and notes, use
+[GitHub Releases](https://github.com/Living-Proof-Labs/livingproof-common/releases).
 
-Release automation uses collaboration-guidelines **v4.2.1** (retained independently of the v5.0.0 guidance adoption), assembles a draft
-release only after verified main, tests installed packages and attaches artifacts
-before publication. Independent review controls merge. Reporter and root consumer
-migrations happen only after this library is released; plugin management stays root.
+## Contribute
+
+Follow [contribution guidance](docs/contributing.md), including the pinned shared
+standards and this library's local instructions.

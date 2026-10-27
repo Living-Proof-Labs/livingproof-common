@@ -27,12 +27,20 @@ markdown_extensions:
       permalink: true
   - pymdownx.superfences
 nav:
+  - Documentation home: https://docs.livingprooflabs.com/
   - Start here: index.md
-  - Consumer usage: usage.md
-  - API reference: api.md
-  - Executable scenarios: scenarios.md
-  - Contributor tasks: tasks.md
-  - Verification and gaps: verification.md
-  - Build context: provenance.md
-  - Pages activation: pages.md
+  - Guides:
+      - Installation and usage: usage.md
+      - Development: development.md
+  - Reference:
+      - API: api.md
+      - Tasks: tasks.md
+  - Scenarios and results: scenarios.md
+  - Verification: verification.md
+  - Contribute: contributing.md
+  - Version and source: provenance.md
+  - Source: https://github.com/Living-Proof-Labs/livingproof-common
+  - Help / report an issue: https://github.com/Living-Proof-Labs/livingproof-common/issues
+  - License: license.md
+  - Publication operations: pages.md
   - Search compatibility: search.md
