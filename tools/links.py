@@ -21,7 +21,7 @@ class Page(HTMLParser):
                 self.links.append(attrs[attribute])
 
 
-def check_links(root):
+def check_links(root, base_path="/livingproof-common/"):
     root = Path(root).resolve()
     pages = {path.resolve(): Page(path.read_text()) for path in root.rglob("*.html")}
     for path, page in pages.items():
@@ -29,7 +29,12 @@ def check_links(root):
             url = urlsplit(link)
             if url.scheme or url.netloc:
                 continue  # External availability is a separate online link check.
-            target = (path.parent / unquote(url.path)).resolve() if url.path else path
+            if url.path.startswith('/'):
+                if not url.path.startswith(base_path):
+                    raise ValueError(f"Link escapes project base path in {path.name}: {link}")
+                target = (root / unquote(url.path.removeprefix(base_path))).resolve()
+            else:
+                target = (path.parent / unquote(url.path)).resolve() if url.path else path
             if target.is_dir():
                 target /= "index.html"
             if not target.is_relative_to(root) or not target.exists():

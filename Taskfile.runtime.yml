@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Adapted from collaboration-guidelines v4.2.1 templates/python/Taskfile.yml.
+# Adapted from collaboration-guidelines v5.0.0 templates/python/Taskfile.yml.
 version: '3'
 tasks:
   setup:
@@ -13,10 +13,9 @@ tasks:
   test:
     desc: Run real Git and artifact tests with JUnit and software coverage
     cmds:
-      - uv run --locked --no-sync coverage run --source=livingproof_common -m pytest --junitxml=artifacts/tests.xml
-      - uv run --locked --no-sync coverage html -d artifacts/coverage
+      - uv run --locked --no-sync python tools/test.py
   docs:
-    desc: Generate library API and Task reference, checking Sphinx warnings
+    desc: Render Markdown, installed API, Task and observed scenario reference
     cmds:
       - uv run --locked --no-sync python tools/docs.py
   verify:
@@ -24,8 +23,22 @@ tasks:
     cmds:
       - task: check
       - task: test
+      - task: reports
       - task: docs
   package:
     desc: Build the wheel, source archive and architecture-independent Debian library
     cmds:
       - uv run --locked --no-sync python tools/package.py
+  docs:setup:
+    desc: Install locked browser test tools and Chromium in the documentation environment
+    cmds:
+      - uv sync --locked --group docs-test --no-python-downloads
+      - uv run --locked --no-sync playwright install chromium
+  docs:test:
+    desc: Exercise manual navigation, search, themes and links under the Pages path
+    cmds:
+      - uv run --locked --no-sync pytest tests/browser --junitxml=artifacts/docs-tests.xml
+  reports:
+    desc: Validate JUnit agreement and render individual scenario outcomes
+    cmds:
+      - uv run --locked --no-sync python tools/scenario_summary.py
