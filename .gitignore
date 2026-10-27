@@ -6,4 +6,3 @@ __pycache__/
 artifacts/
 dist/
 src/livingproof_common/_build_provenance.json
-docs/tasks.rst

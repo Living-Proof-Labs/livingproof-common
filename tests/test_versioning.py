@@ -64,7 +64,11 @@ def ahead(root):
     git(root, "commit", "-m", "ahead")
 
 
+@pytest.mark.scenario('Release and development identity')
 def test_clean_release_and_branch_ahead(repository):
+    """Given a clean tagged consumer checkout.
+    When the consumer adds a commit and publishes an approved tracking ref.
+    Then the release displays 1.4.0 and development identifies distance and commit."""
     identity = source_identity(repository)
     assert identity["state"] == "clean"
     assert display(identity) == "1.4.0"
@@ -83,7 +87,11 @@ def test_clean_release_and_branch_ahead(repository):
 
 
 @pytest.mark.parametrize("change", ["tracked", "staged", "untracked"])
+@pytest.mark.scenario('Live dirty checkout')
 def test_live_dirty_state_without_reinstall(repository, change):
+    """Given an editable consumer at a clean release.
+    When a tracked, staged, or untracked file changes.
+    Then current_version reports dirty state without reinstalling."""
     package = repository / "src/livingproof_capability_report"
     assert current_version(package)[0] == "1.4.0"
     if change == "untracked":
@@ -97,7 +105,11 @@ def test_live_dirty_state_without_reinstall(repository, change):
     assert source == "checkout"
 
 
+@pytest.mark.scenario('Private branch protection')
 def test_detached_and_private_origin_do_not_expose_branch(repository):
+    """Given a consumer with a private origin and a tracking ref.
+    When identity is requested on a branch and detached HEAD.
+    Then private names remain local or detached."""
     ahead(repository)
     git(repository, "remote", "add", "origin", "https://example.invalid/private.git")
     git(repository, "update-ref", "refs/remotes/origin/fix/visible-example", "HEAD")

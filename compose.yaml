@@ -6,12 +6,23 @@ services:
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     working_dir: /workspace/common
     environment:
+      GITHUB_RUN_ID: "${GITHUB_RUN_ID:-}"
       VERSION: "${VERSION:-0.0.0}"
       REPORTING_FAILURE_FIXTURE: "${REPORTING_FAILURE_FIXTURE:-0}"
     volumes:
       - .:/workspace/common
       - common-venv:/opt/common-venv
       - common-cache:/opt/common-cache
+  documentation:
+    extends: tooling
+    build:
+      context: .
+      target: documentation-test
+    environment:
+      PLAYWRIGHT_BROWSERS_PATH: /opt/common-browsers
+    volumes:
+      - common-browsers:/opt/common-browsers
 volumes:
+  common-browsers:
   common-venv:
   common-cache:
