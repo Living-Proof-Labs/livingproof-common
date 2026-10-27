@@ -1,4 +1,8 @@
 """Actual installed artifact behavior, including a Git-free sdist rebuild."""
+import re
+
+import pytest
+
 import json
 import os
 from pathlib import Path
@@ -8,7 +12,11 @@ import subprocess
 from livingproof_common.versioning import PROVENANCE, read_provenance, display
 from test_versioning import git
 
+@pytest.mark.scenario('Installed and rebuilt provenance')
 def test_built_wheel_and_source_archive_retain_provenance(tmp_path):
+    """Given a tagged consumer library built into a wheel and source archive.
+    When the wheel is imported without Git and the source archive is rebuilt.
+    Then both retain the original consumer identity and repeated dirty builds agree."""
     import sys
     import tarfile
     import zipfile
@@ -65,7 +73,11 @@ def test_built_wheel_and_source_archive_retain_provenance(tmp_path):
 
 
 
+@pytest.mark.scenario('Distinct installed consumers')
 def test_two_installed_consumers_keep_distinct_build_identity(tmp_path):
+    """Given two independently tagged consumers built with this library.
+    When their installed wheel files report identity without Git.
+    Then each reports its own release rather than the library or caller identity."""
     import sys
     import zipfile
 
@@ -81,7 +93,9 @@ def test_two_installed_consumers_keep_distinct_build_identity(tmp_path):
         root = tmp_path / name
         package = root / 'src' / name
         package.mkdir(parents=True)
-        (package / '__init__.py').write_text('')
+        usage = (Path(__file__).parents[1] / 'docs/usage.md').read_text()
+        example = re.findall(r'```python\n(.*?)```', usage, re.S)[0]
+        (package / '__init__.py').write_text(example.replace('"my-tool"', f'"{name}"'))
         (root / '.gitignore').write_text(f'src/{name}/{PROVENANCE}\n__pycache__/\ndist/\n')
         (root / 'pyproject.toml').write_text(f'''[build-system]
 requires = ["hatchling==1.27.0", "livingproof-common @ {wheel.as_uri()}"]
@@ -92,15 +106,10 @@ version = "{number}.0.0"
 [tool.hatch.build.hooks.custom]
 path = "hatch_build.py"
 ''')
-        (root / 'hatch_build.py').write_text(f'''from pathlib import Path
-from hatchling.builders.hooks.plugin.interface import BuildHookInterface
-from livingproof_common.versioning import Consumer, record_build
-class CustomBuildHook(BuildHookInterface):
-    def initialize(self, version, build_data):
-        consumer = Consumer("{name}", Path(self.root) / "src/{name}")
-        build_data.setdefault("artifacts", []).append(
-            record_build(self.root, self.metadata.version, consumer))
-''')
+        usage = (Path(__file__).parents[1] / 'docs/usage.md').read_text()
+        hook = re.findall(r'```python\n(.*?)```', usage, re.S)[1]
+        hook = hook.replace('"my-tool"', f'"{name}"').replace('src/my_tool', f'src/{name}')
+        (root / 'hatch_build.py').write_text(hook)
         git(root, 'init', '-b', 'main')
         git(root, 'add', '.')
         git(root, 'commit', '-m', 'consumer fixture')
@@ -112,9 +121,9 @@ class CustomBuildHook(BuildHookInterface):
     probe = '''import sys,json
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
-from livingproof_common.versioning import Consumer,current_version
-print(json.dumps([current_version(Consumer(name,Path(sys.argv[1])/name))
-                  for name in ('fixture_root','fixture_reporter')]))
+import importlib
+modules = [importlib.import_module(name) for name in ('fixture_root', 'fixture_reporter')]
+print(json.dumps([[m.display_version, m.package_version, m.source] for m in modules]))
 '''
     output = subprocess.check_output([sys.executable, '-c', probe, str(installed)],
                                      cwd=tmp_path, env={**os.environ, 'PATH': ''}, text=True)

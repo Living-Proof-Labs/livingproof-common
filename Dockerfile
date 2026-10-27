@@ -24,3 +24,15 @@ RUN mkdir -p /opt/common-venv /opt/common-cache && chmod 1777 /opt/common-venv /
 USER vscode
 CMD ["sleep", "infinity"]
 
+
+# Browser system libraries are development-only; the common library remains pure Python.
+FROM development AS documentation-test
+USER root
+COPY pyproject.toml uv.lock /tmp/common-tools/
+RUN cd /tmp/common-tools && \
+    UV_PROJECT_ENVIRONMENT=/tmp/common-tools/venv uv sync --locked --no-install-project --group docs-test --no-python-downloads && \
+    /tmp/common-tools/venv/bin/playwright install-deps chromium && \
+    rm -rf /tmp/common-tools
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/common-browsers
+RUN mkdir -p /opt/common-browsers && chmod 1777 /opt/common-browsers
+USER vscode

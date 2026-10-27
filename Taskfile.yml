@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Adapted from collaboration-guidelines v4.2.1 templates/container/Taskfile.yml.
+# Adapted from collaboration-guidelines v5.0.0 templates/container/Taskfile.yml.
 version: '3'
 tasks:
   setup:
@@ -27,3 +27,16 @@ tasks:
     platforms: [linux]
     cmds:
       - sh tools/smoke.sh
+  docs:
+    desc: Build the verified Markdown manual inside the development container
+    cmds:
+      - docker compose run --rm tooling task -t Taskfile.runtime.yml docs
+  docs:test:
+    desc: Exercise the manual inside the documentation browser container
+    cmds:
+      - docker compose run --build --rm documentation task -t Taskfile.runtime.yml docs:setup
+      - docker compose run --rm documentation task -t Taskfile.runtime.yml docs:test
+  reports:
+    desc: Validate and summarize scenario outcomes in the development container
+    cmds:
+      - docker compose run --rm tooling task -t Taskfile.runtime.yml reports
