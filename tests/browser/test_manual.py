@@ -1,5 +1,7 @@
 """Exercise the shipped HTML under its actual repository path."""
 import functools
+import hashlib
+import subprocess
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -50,7 +52,10 @@ def test_navigation_search_and_assets(browser, server, width):
     page.goto(server + '/index.html')
     if width == 390:
         page.locator('label.md-header__button[for="__drawer"]:visible').first.click()
-    page.get_by_role('link', name='API reference', exact=True).first.click()
+    api_link = page.get_by_role('link', name='API', exact=True).first
+    if not api_link.is_visible():
+        page.get_by_text('Reference', exact=True).first.click()
+    api_link.click()
     expect(page.locator('article')).to_contain_text('current_version')
     page.goto(server + '/search.html?q=current_version')
     expect(page.locator('article')).to_contain_text('not automatically submitted')
@@ -118,4 +123,73 @@ def test_old_generated_indexes_reach_api(browser, server, filename):
     page.goto(server + '/' + filename)
     expect(page).to_have_url(server + '/api.html')
     expect(page.locator('article')).to_contain_text('current_version(consumer)')
+    page.close()
+
+
+def test_task_reference_matches_reviewed_native_commands(browser, server):
+    rows = json.loads((OUTPUT / 'html/task-reference.json').read_text())
+    assert {row['taskfile'] for row in rows} == {'Taskfile.yml', 'Taskfile.runtime.yml'}
+    record = json.loads((OUTPUT / 'html/build.json').read_text())
+    assert hashlib.sha256((OUTPUT / 'html/task-reference.json').read_bytes()).hexdigest() == (
+        record['task_reference_sha256'])
+    page = browser.new_page()
+    page.goto(server + '/tasks.html#verify')
+    page.reload()
+    expect(page.locator('#verify')).to_have_count(1)
+    text = page.locator('article').inner_text()
+    for row in rows:
+        assert hashlib.sha256((ROOT / row['taskfile']).read_bytes()).hexdigest() == (
+            row['taskfile_sha256'])
+        actual = subprocess.check_output(
+            ['task', '-t', row['taskfile'], '--summary', row['name']], cwd=ROOT, text=True).strip()
+        assert row['summary'] == actual
+        assert ' '.join(actual.split()) in ' '.join(text.split())
+    assert 'task -t Taskfile.runtime.yml TASK' in text
+    assert 'Host wrappers' in text
+    page.close()
+
+
+@pytest.mark.parametrize('width', [1280, 390], ids=['desktop', 'mobile'])
+def test_discovery_and_keyboard_without_badge_scripts(browser, server, width):
+    context = browser.new_context(java_script_enabled=False,
+                                  viewport={'width': width, 'height': 844})
+    page = context.new_page()
+    # Remote availability is checked separately; this proves keyboard activation of
+    # the exact absolute root destination without requiring public network in CI.
+    page.route('https://docs.livingprooflabs.com/',
+               lambda route: route.fulfill(body='<h1>Documentation home destination</h1>',
+                                           content_type='text/html'))
+    page.goto(server + '/usage.html#consumer-contract')
+    root = page.locator('article').get_by_role('link', name='Documentation home', exact=True)
+    expect(root).to_have_attribute('href', 'https://docs.livingprooflabs.com/')
+    root.scroll_into_view_if_needed()
+    root.focus()
+    page.keyboard.press('Shift+Tab')
+    page.keyboard.press('Tab')
+    expect(root).to_be_focused()
+    page.keyboard.press('Enter')
+    expect(page).to_have_url('https://docs.livingprooflabs.com/')
+    expect(page.get_by_role('heading')).to_have_text('Documentation home destination')
+    context.close()
+
+
+def test_source_release_license_and_deep_link_context(browser, server):
+    record = json.loads((OUTPUT / 'html/build.json').read_text())
+    page = browser.new_page()
+    for path in ['index.html', 'usage.html', 'api.html', 'tasks.html',
+                 'contributing.html', 'license.html', 'provenance.html#build-context']:
+        page.goto(server + '/' + path)
+        page.reload()
+        article = page.locator('article')
+        expect(article.get_by_role('link', name='Documentation home', exact=True).last).to_have_attribute(
+            'href', 'https://docs.livingprooflabs.com/')
+        identity = article.get_by_role('link', name='Docs: development', exact=False).last
+        expect(identity).to_have_attribute('href',
+            'https://github.com/Living-Proof-Labs/livingproof-common/tree/' + record['source_commit'])
+        expect(article.get_by_role('link', name='Help / report an issue', exact=True).last).to_have_attribute(
+            'href', 'https://github.com/Living-Proof-Labs/livingproof-common/issues')
+    expect(page.locator('#build-context')).to_have_count(1)
+    expect(page.locator('article')).to_contain_text(record['candidate_package_version'])
+    expect(page.locator('article')).to_contain_text('Published package releases')
+    assert (OUTPUT / 'html/assets/LICENSE.txt').read_bytes() == (ROOT / 'LICENSE').read_bytes()
     page.close()

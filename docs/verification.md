@@ -7,9 +7,9 @@ regressions, wheel/source-archive tests and two installed fixture consumers.
 It had no Markdown-rendered manual, explicit scenario inventory, browser checks,
 or Pages deployment. Raw tests already published individual JUnit cases.
 
-This adoption uses [collaboration-guidelines v5.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/tree/v5.0.0).
-It follows the [feature verification standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v5.0.0/docs/developer-interface.md#observable-behavior-and-feature-coverage)
-and [manual standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v5.0.0/docs/tool-usability.md).
+This adoption uses [collaboration-guidelines v6.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/tree/v6.0.0).
+It follows the [feature verification standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/docs/developer-interface.md#observable-behavior-and-feature-coverage)
+and [manual standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/docs/tool-usability.md).
 Zensical 0.0.73 follows the [reviewed root adoption](https://github.com/Living-Proof-Labs/livingproof/pull/16).
 Repository Markdown is staged from an explicit allowlist. API signatures and
 docstrings come from an installed candidate wheel, tasks from Task, and scenarios
@@ -62,8 +62,21 @@ Firefox, Safari, macOS or Windows behavior. Local checks validate assets, anchor
 search/opening a result, navigation, themes and version context under the project
 base path. External links are checked separately.
 
-Independent installed-product review and live Pages verification remain required.
+Each documentation change requires independent artifact review and delivered verification.
 After deployment, check the exact source commit, navigation, deep links, search,
-theme switching and related manuals from the public URL before changing the README
-start-here link to the rendered manual or adding it to the documentation directory.
-The parent owns that directory update and repository Pages settings.
+theme switching and related manuals from the public URL and record the results on its pull request. The organization root owns the
+documentation directory; repository Pages settings are outside this change.
+
+## Recipe adoption scope
+
+The manual implements the applicable [v6.0.0 recipe](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/docs/documentation-recipe.md):
+consumer installation/usage, installed API, generated host/prepared Task summaries,
+existing scenarios and measured software line coverage, source identity, contribution,
+help and license navigation. There is no library command interface or capability
+contract to document. No established private security-reporting destination was
+identified; this change does not invent one or add a Security link.
+
+Current rendered manuals, the organization root and source-directory links are
+intentional navigation exceptions. Guidance and executable dependency/download pins
+remain exact. Reader navigation works without release-badge scripts or a dynamic
+latest-release lookup. Historical manuals are not maintained.
