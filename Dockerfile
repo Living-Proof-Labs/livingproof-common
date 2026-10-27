@@ -30,7 +30,7 @@ FROM development AS documentation-test
 USER root
 COPY pyproject.toml uv.lock /tmp/common-tools/
 RUN cd /tmp/common-tools && \
-    UV_PROJECT_ENVIRONMENT=/tmp/common-tools/venv uv sync --locked --no-install-project --group docs-test --no-python-downloads && \
+    UV_CACHE_DIR=/tmp/common-tools/cache UV_PROJECT_ENVIRONMENT=/tmp/common-tools/venv uv sync --locked --no-install-project --group docs-test --no-python-downloads && \
     /tmp/common-tools/venv/bin/playwright install-deps chromium && \
     rm -rf /tmp/common-tools
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/common-browsers
