@@ -1,0 +1,7 @@
+{
+ "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+ "description": "Inherits the shared preset: automerge off, 2 concurrent / 1 per hour, Monday before 06:00 UTC. Adds pep621 for pyproject.toml and uv.lock. Omits npm, pip-compile and custom.regex: no Node manifest, requirements.lock, or renovate guidelines marker.",
+ "extends": ["github>Living-Proof-Labs/collaboration-guidelines:renovate-preset#v7.4.2"],
+ "enabledManagers": ["github-actions", "dockerfile", "docker-compose", "pep621"],
+ "lockFileMaintenance": {"enabled": false}
+}
