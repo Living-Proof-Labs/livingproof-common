@@ -1,8 +1,8 @@
 # Living Proof Labs common library
 
-Read and apply [collaboration-guidelines v6.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/AGENTS.md)
+Read and apply [collaboration-guidelines v7.8.2](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v7.8.2/AGENTS.md)
 and relevant procedures at that exact tag. Resolved adoption commit:
-`52a2f274576dab20e96ee1152b6c8d187cfbf377`.
+`1470bd46deffd62d6badf568996225e56872258a`.
 
 Local additions: this is an Apache-2.0 library, without a CLI or plugin manager.
 Keep consumer identity explicit. Do not inspect caller working directories or

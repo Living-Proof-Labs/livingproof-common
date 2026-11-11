@@ -7,9 +7,9 @@ regressions, wheel/source-archive tests and two installed fixture consumers.
 It had no Markdown-rendered manual, explicit scenario inventory, browser checks,
 or Pages deployment. Raw tests already published individual JUnit cases.
 
-This adoption uses [collaboration-guidelines v6.0.0](https://github.com/Living-Proof-Labs/collaboration-guidelines/tree/v6.0.0).
-It follows the [feature verification standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/docs/developer-interface.md#observable-behavior-and-feature-coverage)
-and [manual standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/docs/tool-usability.md).
+This adoption uses [collaboration-guidelines v7.8.2](https://github.com/Living-Proof-Labs/collaboration-guidelines/tree/v7.8.2).
+It follows the [feature verification standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v7.8.2/docs/developer-interface.md#observable-behavior-and-feature-coverage)
+and [manual standard](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v7.8.2/docs/tool-usability.md).
 Zensical 0.0.73 follows the [reviewed root adoption](https://github.com/Living-Proof-Labs/livingproof/pull/16).
 Repository Markdown is staged from an explicit allowlist. API signatures and
 docstrings come from an installed candidate wheel, tasks from Task, and scenarios
@@ -69,7 +69,7 @@ documentation directory; repository Pages settings are outside this change.
 
 ## Recipe adoption scope
 
-The manual implements the applicable [v6.0.0 recipe](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v6.0.0/docs/documentation-recipe.md):
+The manual implements the applicable [v7.8.2 recipe](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v7.8.2/docs/documentation-recipe.md):
 consumer installation/usage, installed API, generated host/prepared Task summaries,
 existing scenarios and measured software line coverage, source identity, contribution,
 help and license navigation. There is no library command interface or capability
