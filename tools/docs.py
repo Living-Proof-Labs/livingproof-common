@@ -22,8 +22,8 @@ SOURCES = {'README.md': 'index.md', 'docs/usage.md': 'usage.md',
            'docs/search.md': 'search.md', 'docs/development.md': 'development.md',
            'docs/contributing.md': 'contributing.md', 'docs/license.md': 'license.md'}
 REPOSITORY = 'https://github.com/Living-Proof-Labs/livingproof-common'
-GUIDELINES = 'v6.0.0'
-GUIDELINES_COMMIT = '52a2f274576dab20e96ee1152b6c8d187cfbf377'
+GUIDELINES = 'v7.8.2'
+GUIDELINES_COMMIT = '1470bd46deffd62d6badf568996225e56872258a'
 
 
 def rewrite_links(text, path):
