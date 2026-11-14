@@ -43,5 +43,5 @@ using apt. No apt repository is introduced.
 
 Release automation uses [collaboration-guidelines v7.8.2](https://github.com/Living-Proof-Labs/collaboration-guidelines/blob/v7.8.2/.github/workflows/semantic-release.yml), assembles a draft
 release only after verified main, tests installed packages and attaches artifacts
-before publication. Independent review controls merge. Consumers update their pins through tested pull requests; plugin management
+before publication. The engineering lead may merge once required checks pass on the exact head revision and verification evidence is recorded. Consumers update their pins through tested pull requests; plugin management
 stays with the Living Proof command home.
