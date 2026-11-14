@@ -2,7 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Inherits the shared preset: external updates weekly, internal updates eligible on each hosted run, automerge off. Retains repository-specific dependency managers and disables lockfile maintenance.",
   "extends": [
-    "github>Living-Proof-Labs/collaboration-guidelines:renovate-preset#v7.10.8"
+    "github>Living-Proof-Labs/collaboration-guidelines:renovate-preset#v9.2.0"
   ],
   "enabledManagers": [
     "github-actions",
