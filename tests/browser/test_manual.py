@@ -7,10 +7,22 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 import threading
+from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from manual_session import (  # noqa: E402
+    FIXTURE_STARS,
+    FIXTURE_TAG,
+    RATE_LIMIT_HEADERS,
+    RELEASE_PATH,
+    REPO_PATH,
+    open_manual_page,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / 'artifacts/docs'
@@ -41,14 +53,7 @@ def browser():
         browser.close()
 
 
-@pytest.mark.parametrize('width', [1280, 390], ids=['desktop', 'mobile'])
-def test_navigation_search_and_assets(browser, server, width):
-    context = browser.new_context(viewport={'width': width, 'height': 844})
-    page = context.new_page()
-    failures = []
-    page.on('pageerror', lambda error: failures.append(str(error)))
-    page.on('response', lambda response: failures.append(response.url)
-            if response.status >= 400 else None)
+def exercise_navigation_search_and_assets(page, server, width):
     page.goto(server + '/index.html')
     if width == 390:
         page.locator('label.md-header__button[for="__drawer"]:visible').first.click()
@@ -69,10 +74,116 @@ def test_navigation_search_and_assets(browser, server, width):
     result.click()
     expect(page).to_have_url(re.compile('/livingproof-common/api.html'))
     expect(page.locator('article')).to_contain_text('current_version')
-    (OUTPUT / 'screenshots').mkdir(exist_ok=True)
-    page.screenshot(path=str(OUTPUT / 'screenshots' / f'navigation-{width}.png'))
+
+
+def assert_github_metadata(github, traffic, github_responses):
+    fulfilled = traffic['fulfilled']
+    assert fulfilled, 'the theme made no GitHub metadata request'
+    assert traffic['continued'] == []
+    assert traffic['blocked'] == []
+    paths = {urlsplit(item['url']).path.rstrip('/') for item in fulfilled}
+    assert paths == {REPO_PATH, RELEASE_PATH}
+    assert [item['url'] for item in github_responses] == [item['url'] for item in fulfilled]
+    for seen, sent in zip(github_responses, fulfilled):
+        assert seen['status'] == sent['status']
+        body = json.loads(sent['body'])
+        path = urlsplit(sent['url']).path.rstrip('/')
+        if github == 'success':
+            assert seen['status'] == 200
+            if path == RELEASE_PATH:
+                assert body['tag_name'] == FIXTURE_TAG
+            else:
+                assert body['stargazers_count'] == FIXTURE_STARS
+        else:
+            assert seen['status'] == 403
+            assert 'rate limit exceeded' in body['message']
+            for name in ('x-ratelimit-limit', 'x-ratelimit-remaining', 'retry-after'):
+                assert seen['headers'][name] == RATE_LIMIT_HEADERS[name]
+
+
+def assert_source_facts(page, github):
+    version = page.locator('.md-source__fact--version')
+    stars = page.locator('.md-source__fact--stars')
+    if github == 'success':
+        expect(version.first).to_have_text(FIXTURE_TAG, timeout=5000)
+        assert set(version.all_inner_texts()) == {FIXTURE_TAG}
+        expect(stars.first).to_have_text(str(FIXTURE_STARS), timeout=5000)
+        assert set(stars.all_inner_texts()) == {str(FIXTURE_STARS)}
+        return
+    page.wait_for_timeout(500)
+    expect(page.locator('.md-source__fact')).to_have_count(0)
+
+
+def require_clean(failures):
     assert not failures, failures
-    context.close()
+
+
+@pytest.mark.parametrize('width,github', [
+    (1280, 'success'),
+    (1280, 'rate_limited'),
+    (390, 'success'),
+    (390, 'rate_limited'),
+], ids=['desktop-success', 'desktop-rate-limited', 'mobile-success', 'mobile-rate-limited'])
+def test_navigation_search_and_assets(browser, server, width, github):
+    context, page, failures, traffic, github_responses = open_manual_page(browser, width, github)
+    try:
+        exercise_navigation_search_and_assets(page, server, width)
+        (OUTPUT / 'screenshots').mkdir(exist_ok=True)
+        page.screenshot(path=str(OUTPUT / 'screenshots' / f'navigation-{width}-{github}.png'))
+        assert_source_facts(page, github)
+        assert_github_metadata(github, traffic, github_responses)
+        require_clean(failures)
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize('width', [1280, 390], ids=['desktop', 'mobile'])
+def test_local_asset_failure_fails_the_manual_check(browser, server, width):
+    context, page, failures, _traffic, _responses = open_manual_page(browser, width, 'success')
+    try:
+        page.route(server + '/broken-asset.html', lambda route: route.fulfill(
+            status=200, content_type='text/html',
+            body='<!doctype html><link rel="stylesheet" href="assets/missing-manual-asset.css">'))
+        page.goto(server + '/broken-asset.html')
+        assert any(item.startswith('404 ') and item.endswith('/assets/missing-manual-asset.css')
+                   for item in failures), failures
+        with pytest.raises(AssertionError):
+            require_clean(failures)
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize('width', [1280, 390], ids=['desktop', 'mobile'])
+def test_page_error_fails_the_manual_check(browser, server, width):
+    context, page, failures, _traffic, _responses = open_manual_page(browser, width, 'success')
+    try:
+        page.route(server + '/boom.html', lambda route: route.fulfill(
+            status=200, content_type='text/html',
+            body='<!doctype html><script>throw new Error("manual page exploded")</script>'))
+        page.goto(server + '/boom.html')
+        assert any('manual page exploded' in item for item in failures), failures
+        with pytest.raises(AssertionError):
+            require_clean(failures)
+    finally:
+        context.close()
+
+
+def test_unexpected_external_request_is_blocked(browser, server):
+    context, page, failures, traffic, _responses = open_manual_page(browser, 1280, 'success')
+    try:
+        page.goto(server + '/index.html')
+        probe = 'https://example.com/manual-check-probe'
+        result = page.evaluate(
+            '''url => fetch(url).then(
+                response => ({ok: true, status: response.status}),
+                error => ({ok: false, error: String(error)}))''',
+            probe)
+        assert result['ok'] is False, result
+        assert probe in traffic['blocked']
+        assert traffic['continued'] == []
+        assert any(probe in item for item in failures), failures
+    finally:
+        context.close()
 
 
 @pytest.mark.parametrize('mode', ['light', 'dark'])
