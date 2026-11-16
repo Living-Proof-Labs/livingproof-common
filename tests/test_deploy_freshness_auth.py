@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-"""A workflow that reads current main at git/ref/heads/main must send the workflow token.
+"""The pages freshness read must stay an authenticated gh api call.
 
-An anonymous call shares the runner rate limit, fails with HTTP 403, and leaves
-the published site on the previous release. contents: read is enough; the deploy
-job must not gain contents: write.
+This repository already calls git/ref/heads/main with gh api and
+GH_TOKEN: ${{ github.token }}. An anonymous call shares the runner rate
+limit, fails with HTTP 403, and leaves the published site on the previous
+release. contents: read is enough; the deploy job must not gain contents: write.
 """
 
-import json
 import os
 import re
 import subprocess
@@ -18,9 +18,6 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github/workflows"
 FRESHNESS = "git/ref/heads/main"
-FRESHNESS_URL = (
-    "https://api.github.com/repos/Living-Proof-Labs/livingproof-common/git/ref/heads/main"
-)
 TOKEN_VALUE = re.compile(r"\$\{\{\s*(?:github\.token|secrets\.GITHUB_TOKEN)\s*\}\}")
 DIRECT_HTTP = re.compile(
     r"urlopen|urllib\.request|requests\.(?:get|post|request)"
@@ -28,7 +25,6 @@ DIRECT_HTTP = re.compile(
 )
 GH_API = re.compile(r"\bgh\s+api\b")
 EXPECTED_SHA = "a" * 40
-STALE_MESSAGE = "Refusing stale documentation: main advanced"
 
 UNAUTHENTICATED = """\
 jobs:
@@ -121,29 +117,18 @@ jobs:
           PYCODE
 """
 
-SITECUSTOMIZE = """\
-import json
-import os
-import urllib.error
-import urllib.request
-from io import BytesIO
-
-def urlopen(url, data=None, timeout=None, *args, **kwargs):
-    if isinstance(url, urllib.request.Request):
-        target = url.full_url
-        authorization = url.get_header("Authorization")
-    else:
-        target = url
-        authorization = None
-    with open(os.environ["FRESHNESS_CAPTURE"], "w", encoding="utf-8") as handle:
-        json.dump({"url": target, "timeout": timeout, "authorization": authorization}, handle)
-    status = int(os.environ["FRESHNESS_HTTP_STATUS"])
-    if status != 200:
-        raise urllib.error.URLError(f"HTTP Error {status}: rate limit exceeded")
-    payload = json.dumps({"object": {"sha": os.environ["FRESHNESS_SHA"]}}).encode()
-    return BytesIO(payload)
-
-urllib.request.urlopen = urlopen
+GH_STUB = """\
+#!/bin/sh
+if [ -z "$GH_TOKEN" ]; then
+  echo "gh: missing GH_TOKEN" >&2
+  exit 1
+fi
+printf '%s\\n' "$*" > "$GH_CAPTURE"
+if [ "$GH_STATUS" != 0 ]; then
+  echo "HTTP Error $GH_STATUS: rate limit exceeded" >&2
+  exit "$GH_STATUS"
+fi
+printf '%s\\n' "$GH_SHA"
 """
 
 
@@ -283,12 +268,40 @@ def test_repository_workflows_authenticate_every_main_freshness_read():
     steps = job["steps"]
     guard = steps[0]
     assert guard["name"] == "Require current main before deploying this run's artifact"
-    assert guard["env"]["EXPECTED_SHA"] == "${{ github.sha }}"
-    assert guard["env"]["GITHUB_TOKEN"] == "${{ github.token }}"
-    assert "urlopen(request, timeout=30)" in guard["run"]
-    assert "urlopen(url" not in guard["run"]
-    assert STALE_MESSAGE in guard["run"]
+    assert guard["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert guard["env"]["CANDIDATE"] == "${{ github.sha }}"
+    assert "gh api repos/Living-Proof-Labs/livingproof-common/git/ref/heads/main" in guard["run"]
+    assert 'test "$current" = "$CANDIDATE"' in guard["run"]
+    assert "urlopen" not in guard["run"]
     assert steps[1]["uses"].startswith("actions/deploy-pages@")
+
+
+def test_removing_the_workflow_token_from_the_real_step_fails():
+    text = (WORKFLOWS / "verify.yml").read_text()
+    stripped = text.replace(
+        "          GH_TOKEN: ${{ github.token }}\n          CANDIDATE: ${{ github.sha }}\n",
+        "          CANDIDATE: ${{ github.sha }}\n",
+        1,
+    )
+    assert stripped != text
+    problems = freshness_problems("verify.yml", stripped)
+    assert any("gh api" in problem and "without authentication" in problem for problem in problems)
+
+
+def test_replacing_the_real_gh_api_read_with_anonymous_urlopen_fails():
+    text = (WORKFLOWS / "verify.yml").read_text()
+    old = (
+        "current=$(gh api repos/Living-Proof-Labs/livingproof-common/"
+        "git/ref/heads/main --jq .object.sha)"
+    )
+    new = (
+        'python -c "import urllib.request; urllib.request.urlopen('
+        "'https://api.github.com/repos/Living-Proof-Labs/livingproof-common/git/ref/heads/main')\""
+    )
+    replaced = text.replace(old, new, 1)
+    assert replaced != text
+    problems = freshness_problems("verify.yml", replaced)
+    assert any("without authentication" in problem for problem in problems), problems
 
 
 def test_unauthenticated_urllib_freshness_read_fails():
@@ -319,50 +332,50 @@ def test_contents_write_fails_even_when_the_read_sends_a_token():
     assert any("contents: read" in problem and "contents: write" in problem for problem in problems)
 
 
-def _run_guard(tmp_path, *, remote_sha, http_status):
+def _run_guard(tmp_path, *, remote_sha, gh_status):
     document = yaml.safe_load((WORKFLOWS / "verify.yml").read_text())
     guard = document["jobs"]["deploy-documentation"]["steps"][0]
-    (tmp_path / "sitecustomize.py").write_text(SITECUSTOMIZE)
-    capture = tmp_path / "capture.json"
+    stub = tmp_path / "gh"
+    stub.write_text(GH_STUB)
+    stub.chmod(0o755)
+    capture = tmp_path / "capture.txt"
     result = subprocess.run(
-        ["bash", "-c", guard["run"]],
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", guard["run"]],
         env={
-            "PATH": os.environ["PATH"],
-            "PYTHONPATH": str(tmp_path),
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "EXPECTED_SHA": EXPECTED_SHA,
-            "GITHUB_TOKEN": "workflow-token",
-            "FRESHNESS_CAPTURE": str(capture),
-            "FRESHNESS_SHA": remote_sha,
-            "FRESHNESS_HTTP_STATUS": str(http_status),
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "GH_TOKEN": "workflow-token",
+            "CANDIDATE": EXPECTED_SHA,
+            "GH_CAPTURE": str(capture),
+            "GH_STATUS": str(gh_status),
+            "GH_SHA": remote_sha,
         },
         capture_output=True,
         text=True,
         check=False,
     )
     assert "workflow-token" not in result.stdout
-    record = json.loads(capture.read_text()) if capture.is_file() else None
-    return result, record
+    assert "workflow-token" not in result.stderr
+    recorded = capture.read_text() if capture.is_file() else ""
+    assert "workflow-token" not in recorded
+    return result, recorded
 
 
 @pytest.mark.parametrize(
-    ("remote_sha", "http_status", "expected_code", "message"),
+    ("remote_sha", "gh_status", "expected_code"),
     [
-        (EXPECTED_SHA, 200, 0, None),
-        ("b" * 40, 200, 1, STALE_MESSAGE),
-        ("", 200, 1, STALE_MESSAGE),
-        (EXPECTED_SHA, 403, 1, None),
+        (EXPECTED_SHA, 0, 0),
+        ("b" * 40, 0, 1),
+        ("", 0, 1),
+        (EXPECTED_SHA, 403, None),
     ],
 )
-def test_deploy_guard_still_aborts_when_main_moved_or_the_read_fails(
-    tmp_path, remote_sha, http_status, expected_code, message
+def test_deploy_guard_fails_closed_when_main_moved_or_the_read_fails(
+    tmp_path, remote_sha, gh_status, expected_code
 ):
-    result, record = _run_guard(tmp_path, remote_sha=remote_sha, http_status=http_status)
-    assert result.returncode == expected_code, result.stderr
-    assert record is not None, result.stderr
-    assert record["authorization"] == "Bearer workflow-token"
-    assert record["url"] == FRESHNESS_URL
-    assert record["timeout"] == 30
-    if message is not None:
-        assert message in result.stderr
-    assert "workflow-token" not in result.stderr
+    result, recorded = _run_guard(tmp_path, remote_sha=remote_sha, gh_status=gh_status)
+    if expected_code is None:
+        assert result.returncode != 0, result.stderr
+    else:
+        assert result.returncode == expected_code, result.stderr
+    assert "git/ref/heads/main" in recorded
+    assert "Living-Proof-Labs/livingproof-common" in recorded
