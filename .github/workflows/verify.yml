@@ -172,13 +172,9 @@ jobs:
             artifacts/docs/screenshots/
           retention-days: 14
           if-no-files-found: error
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        with:
-          path: artifacts/docs/html
   deploy-documentation:
-    needs: [verify, documentation]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [release, publish]
+    if: needs.release.outputs.draft-created == 'true' && needs.publish.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -186,11 +182,36 @@ jobs:
       id-token: write
     concurrency:
       group: common-pages
-      cancel-in-progress: true
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      RELEASE_TAG: ${{ needs.release.outputs.git-tag }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.release.outputs.git-tag }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Require release tag to match the exact verified commit
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$GITHUB_SHA"
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e
+        with:
+          version: '3.54.0'
+      - name: Match mounted checkout ownership
+        run: |
+          echo "LOCAL_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "LOCAL_GID=$(id -g)" >> "$GITHUB_ENV"
+      - run: task setup
+      - run: task docs
+      - run: task docs:test
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
+        with:
+          path: artifacts/docs/html
       - name: Require current main before deploying this run's artifact
         env:
           GH_TOKEN: ${{ github.token }}
