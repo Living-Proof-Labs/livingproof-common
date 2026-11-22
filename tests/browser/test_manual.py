@@ -302,7 +302,8 @@ def test_source_release_license_and_deep_link_context(browser, server):
     expect(page.locator('#build-context')).to_have_count(1)
     expect(page.locator('article')).to_contain_text(record['package_version'])
     if record['channel'] == 'release':
-        expect(page.locator('article').get_by_role('link', name=record['release_tag'])).to_have_attribute(
+        release = page.locator('article').get_by_role('link', name=record['release_tag'], exact=True)
+        expect(release).to_have_attribute(
             'href', 'https://github.com/Living-Proof-Labs/livingproof-common/releases/tag/'
             + record['release_tag'])
     else:
