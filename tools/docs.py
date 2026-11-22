@@ -13,6 +13,7 @@ import sys
 import yaml
 
 from links import check_links
+from manual_release import PREVIEW, PYTHON_PREVIEW, released_wheel
 from evidence import source_digest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,11 +78,28 @@ def main():
     assert report['source_commit'] == commit, 'Scenario report is from a different commit'
     assert report['source_digest'] == source_digest(ROOT), 'Scenario report has stale source inputs'
     assert report['scenarios'], 'Missing scenario inventory; run task test'
+    manual_version = os.environ.get('MANUAL_VERSION') or None
+    wheel_version = os.environ.get('MANUAL_WHEEL_VERSION') or None
+    stable_tag = os.environ.get('MANUAL_RELEASE_TAG') or None
+    if bool(manual_version) != bool(wheel_version):
+        raise ValueError("Manual and wheel version must be supplied together")
+    if manual_version and (dirty or not re.fullmatch(PREVIEW, manual_version)
+                           or not re.fullmatch(PYTHON_PREVIEW, wheel_version)):
+        raise ValueError("Expected exact supported manual and wheel versions in a clean checkout")
+    if stable_tag:
+        if wheel_version != manual_version:
+            raise ValueError("Published wheel and stable manual must have the same version")
+        if run('git', 'rev-parse', '--verify', f'refs/tags/{stable_tag}^{{commit}}') != commit:
+            raise ValueError("Manual tag does not resolve to the exact checked-out commit")
+    channel = 'release' if stable_tag else ('candidate' if manual_version else 'development')
+    label = (f'Docs: release {stable_tag}' if stable_tag else
+             f'Docs: candidate {manual_version}' if manual_version else 'Docs: development')
+    identity = f'[{label} · {commit[:12]}]({REPOSITORY}/tree/{commit})'
     context = ('\n\n---\n\n'
                '[Documentation home](https://docs.livingprooflabs.com/) · '
                f'[Source]({REPOSITORY}/tree/{commit}) · '
                f'[Help / report an issue]({REPOSITORY}/issues) · [License](license.md)\n\n'
-               f'[Docs: development · {commit[:12]}]({REPOSITORY}/tree/{commit}). '
+               f'{identity}. '
                f'Source revision: `{commit}` (dirty checkout: {str(dirty).lower()}). '
                '[Version and source](provenance.md).\n')
     for path, destination in SOURCES.items():
@@ -91,14 +109,23 @@ def main():
     shutil.copyfile(ROOT / 'LICENSE', source / 'assets/LICENSE.txt')
     wheels = ROOT / 'artifacts/docs-wheel'
     shutil.rmtree(wheels, ignore_errors=True)
-    subprocess.run(['uv', 'build', '--offline', '--wheel', '--out-dir', str(wheels)],
-                   cwd=ROOT, check=True)
-    wheel, = wheels.glob('*.whl')
+    if stable_tag:
+        released = released_wheel(ROOT / 'artifacts/released-wheel', stable_tag, wheel_version, commit)
+        wheels.mkdir()
+        wheel = Path(shutil.copyfile(released, wheels / released.name))
+    else:
+        # PyPA handles the shared PEP 440 attempt number without uv's uint64 limit.
+        env = {**os.environ, 'UV_OFFLINE': '1'}
+        if wheel_version:
+            env['SETUPTOOLS_SCM_PRETEND_VERSION'] = wheel_version
+        subprocess.run([sys.executable, '-m', 'build', '--installer', 'uv', '--wheel',
+                        '--outdir', str(wheels)], cwd=ROOT, check=True, env=env)
+        wheel, = wheels.glob('*.whl')
     installed = OUTPUT / 'installed'
-    subprocess.run(['uv', 'venv', '--no-python-downloads', str(installed)], check=True)
+    subprocess.run([sys.executable, '-m', 'venv', str(installed)], check=True)
     python = installed / 'bin/python'
-    subprocess.run(['uv', 'pip', 'install', '--no-index', '--python', str(python), str(wheel)],
-                   check=True)
+    subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check',
+                    '--no-cache-dir', '--no-index', '--no-deps', str(wheel)], check=True)
     reference = run(str(python), '-I', str(ROOT / 'tools/api_reference.py'))
     (source / 'api.md').write_text(reference + context)
     task_text, task_records = task_reference()
@@ -116,26 +143,37 @@ def main():
     (source / 'scenarios.md').write_text('\n'.join(lines) + context)
     shutil.copyfile(ROOT / 'artifacts/scenarios.json', source / 'scenarios.json')
     shutil.copytree(ROOT / 'artifacts/coverage', source / 'coverage')
+    installed_version = run(str(python), '-I', '-c',
+                            'from importlib.metadata import version; print(version("livingproof-common"))')
+    if wheel_version and installed_version != wheel_version:
+        raise ValueError("Installed wheel must match the selected package version")
     record = {'source_commit': commit, 'source_dirty': dirty, 'wheel': wheel.name,
               'wheel_sha256': hashlib.sha256(wheel.read_bytes()).hexdigest(),
               'scenario_report_sha256': hashlib.sha256((source / 'scenarios.json').read_bytes()).hexdigest(),
               'workflow_run': ('https://github.com/Living-Proof-Labs/livingproof-common/actions/runs/'
                                + os.environ['GITHUB_RUN_ID'] if os.environ.get('GITHUB_RUN_ID') else None),
               'guidelines': GUIDELINES, 'guidelines_commit': GUIDELINES_COMMIT,
-              'candidate_package_version': run(str(python), '-I', '-c',
-                  'from importlib.metadata import version; print(version("livingproof-common"))'),
+              'manual_label': label, 'manual_version': manual_version, 'channel': channel,
+              'package_version': installed_version, 'release_tag': stable_tag,
+              'run_id': os.environ.get('GITHUB_RUN_ID') or None,
+              'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT') or None,
               'task_reference_sha256': hashlib.sha256((source / 'task-reference.json').read_bytes()).hexdigest()}
+    if not stable_tag:
+        record['candidate_package_version'] = installed_version
+    wheel_context = (
+        f'Released package metadata: `{installed_version}`. '
+        f'This manual uses the exact wheel from [{stable_tag}]({REPOSITORY}/releases/tag/{stable_tag}). '
+        if stable_tag else
+        f'Candidate package metadata: `{installed_version}`. '
+        f'[Published package releases]({REPOSITORY}/releases) are a separate identity. '
+        'This is not a released manual. Historical manuals are unavailable; use the '
+        f'[release source tags]({REPOSITORY}/tags). ')
     (source / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
     (source / 'provenance.md').write_text('# Version and source\n\n'
         '<a id="build-context"></a>\n\n'
-        f'[Docs: development · {commit[:12]}]({REPOSITORY}/tree/{commit})\n\n'
-        f'Candidate package metadata: `{record["candidate_package_version"]}`. '
-        f'[Published package releases]({REPOSITORY}/releases) are a separate identity; '
-        'the installation guide selects a fixed release example, not a moving latest pin.\n\n'
-        'This is development documentation for the exact source below, not a released manual. '
-        'Historical manuals are unavailable; use the '
-        '[release source tags](https://github.com/Living-Proof-Labs/livingproof-common/tags).\n\n'
-        'The wheel is built and installed to generate API signatures and docstrings. '
+        f'{identity}\n\n' + wheel_context +
+        'The installation guide selects a fixed release example, not a moving latest pin.\n\n'
+        'The selected wheel is installed to generate API signatures and docstrings. '
         'Scenario tests separately build and exercise consumer wheels. '
         'Local results do not establish hosted CI or independent review.\n\n'
         '```json\n' + json.dumps(record, indent=2) + '\n```\n\n[Build record](build.json) · [Task reference inputs](task-reference.json)\n' + context)

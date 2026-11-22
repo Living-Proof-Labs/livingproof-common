@@ -266,14 +266,14 @@ def test_repository_workflows_authenticate_every_main_freshness_read():
         "id-token": "write",
     }
     steps = job["steps"]
-    guard = steps[0]
+    guard = steps[-2]
     assert guard["name"] == "Require current main before deploying this run's artifact"
     assert guard["env"]["GH_TOKEN"] == "${{ github.token }}"
     assert guard["env"]["CANDIDATE"] == "${{ github.sha }}"
     assert "gh api repos/Living-Proof-Labs/livingproof-common/git/ref/heads/main" in guard["run"]
     assert 'test "$current" = "$CANDIDATE"' in guard["run"]
     assert "urlopen" not in guard["run"]
-    assert steps[1]["uses"].startswith("actions/deploy-pages@")
+    assert steps[-1]["uses"].startswith("actions/deploy-pages@")
 
 
 def test_removing_the_workflow_token_from_the_real_step_fails():
@@ -334,7 +334,7 @@ def test_contents_write_fails_even_when_the_read_sends_a_token():
 
 def _run_guard(tmp_path, *, remote_sha, gh_status):
     document = yaml.safe_load((WORKFLOWS / "verify.yml").read_text())
-    guard = document["jobs"]["deploy-documentation"]["steps"][0]
+    guard = document["jobs"]["deploy-documentation"]["steps"][-2]
     stub = tmp_path / "gh"
     stub.write_text(GH_STUB)
     stub.chmod(0o755)

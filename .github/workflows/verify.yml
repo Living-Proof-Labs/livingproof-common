@@ -3,10 +3,25 @@ on:
   pull_request:
   push:
     branches: [main, ci/reporting-failure]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing published stable release tag pointing to current main (Pages retry only)
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
+  version:
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+    permissions:
+      contents: read
+    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release-candidate.yml@v9.9.2
+    with:
+      replay-tag: ${{ inputs.release_tag || '' }}
   verify:
+    needs: version
+    if: ${{ !cancelled() && (needs.version.result == 'success' || needs.version.result == 'skipped') }}
     permissions:
       contents: read
     strategy:
@@ -15,6 +30,11 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
     env:
+      MANUAL_VERSION: ${{ needs.version.outputs.semver-version }}
+      MANUAL_WHEEL_VERSION: ${{ needs.version.outputs.pep440-version }}
+      PLAN_COMMIT: ${{ needs.version.outputs.commit }}
+      PLAN_RUN: ${{ needs.version.outputs.run-id }}
+      PLAN_ATTEMPT: ${{ needs.version.outputs.run-attempt }}
       REPORTING_FAILURE_FIXTURE: ${{ github.ref == 'refs/heads/ci/reporting-failure' && '1' || '0' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -29,6 +49,19 @@ jobs:
         run: |
           echo "LOCAL_UID=$(id -u)" >> "$GITHUB_ENV"
           echo "LOCAL_GID=$(id -g)" >> "$GITHUB_ENV"
+      - name: Check candidate source and plan identity
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          if [ -n "$MANUAL_VERSION" ] || [ -n "$PLAN_COMMIT" ]; then
+            test -n "$MANUAL_VERSION"
+            test -n "$MANUAL_WHEEL_VERSION"
+            test "$PLAN_COMMIT" = "$EXPECTED"
+            test "$PLAN_RUN" = "$GITHUB_RUN_ID"
+            test "$PLAN_ATTEMPT" = "$GITHUB_RUN_ATTEMPT"
+          fi
       - run: task setup
       - run: task check
       - run: task test
@@ -40,6 +73,11 @@ jobs:
       - name: Build manual with available test evidence
         if: ${{ !cancelled() }}
         run: task docs
+      - name: Seal verified candidate manual
+        if: ${{ !cancelled() && env.MANUAL_VERSION != '' }}
+        run: |
+          python3 tools/manual_release.py seal "$MANUAL_VERSION" "$MANUAL_WHEEL_VERSION" \
+            "$PLAN_COMMIT" "$PLAN_RUN" "$PLAN_ATTEMPT" candidate
       - name: Publish individual test results and summary
         if: ${{ !cancelled() }}
         uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a
@@ -54,7 +92,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: library-reports-${{ matrix.runner }}
+          name: library-reports-${{ matrix.runner }}-${{ github.run_attempt }}
           path: |
             artifacts/tests.xml
             artifacts/scenarios.json
@@ -64,10 +102,11 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ !cancelled() }}
         with:
-          name: common-manual-${{ matrix.runner }}
+          name: common-manual-${{ matrix.runner }}-${{ github.run_attempt }}-${{ env.MANUAL_VERSION || 'development' }}
           path: |
             artifacts/docs/html/
             artifacts/docs/source/
+            artifacts/docs/seal.json
             artifacts/docs-wheel/
           retention-days: 14
           if-no-files-found: error
@@ -81,20 +120,36 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() && hashFiles('dist/**') != '' }}
         with:
-          name: library-packages-${{ matrix.runner }}
+          name: library-packages-${{ matrix.runner }}-${{ github.run_attempt }}
           path: dist/
           retention-days: 30
   release:
-    needs: [verify, documentation]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [verify, documentation, version]
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.version.outputs.version != '' &&
+      needs.version.outputs.version == needs.version.outputs.semver-version &&
+      needs.version.outputs.version == needs.version.outputs.pep440-version &&
+      needs.version.outputs.git-tag == format('v{0}', needs.version.outputs.version) &&
+      needs.version.outputs.commit == github.sha &&
+      needs.version.outputs.run-id == github.run_id &&
+      needs.version.outputs.run-attempt == github.run_attempt &&
+      needs.documentation.outputs.manual-seal != ''
     permissions:
       contents: write
-    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.7.9
+    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.9.2
     with:
       draft-release: true
+      expected-version: ${{ needs.version.outputs.version }}
+      expected-commit: ${{ needs.version.outputs.commit }}
   publish:
-    needs: release
-    if: needs.release.outputs.draft-created == 'true'
+    needs: [release, version]
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.release.outputs.draft-created == 'true' &&
+      needs.release.outputs.version == needs.version.outputs.version &&
+      needs.release.outputs.git-tag == needs.version.outputs.git-tag &&
+      needs.release.outputs.commit == github.sha
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -106,7 +161,15 @@ jobs:
         with:
           ref: ${{ needs.release.outputs.git-tag }}
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
+      - name: Require the tested version and exact release tag before packaging
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$RELEASE_TAG" = "v$VERSION"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")" = "$GITHUB_SHA"
       - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e
         with:
           version: '3.54.0'
@@ -119,7 +182,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: release-packages
+          name: release-packages-${{ github.run_attempt }}
           path: dist/
           retention-days: 30
       - name: Attach all assets before publication
@@ -131,8 +194,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$RELEASE_TAG" --draft=false
   documentation:
-    needs: verify
+    needs: [verify, version]
+    if: ${{ !cancelled() && needs.verify.result == 'success' }}
     runs-on: ubuntu-24.04
+    outputs:
+      manual-seal: ${{ steps.manual-seal.outputs.digest }}
+    env:
+      MANUAL_VERSION: ${{ needs.version.outputs.semver-version }}
+      MANUAL_WHEEL_VERSION: ${{ needs.version.outputs.pep440-version }}
+      PLAN_COMMIT: ${{ needs.version.outputs.commit }}
+      PLAN_RUN: ${{ needs.version.outputs.run-id }}
+      PLAN_ATTEMPT: ${{ needs.version.outputs.run-attempt }}
     permissions:
       contents: read
     steps:
@@ -145,13 +217,25 @@ jobs:
           version: '3.54.0'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: common-manual-ubuntu-24.04
+          name: common-manual-ubuntu-24.04-${{ github.run_attempt }}-${{ env.MANUAL_VERSION || 'development' }}
           path: artifacts/
       - name: Match mounted checkout ownership
         run: |
           echo "LOCAL_UID=$(id -u)" >> "$GITHUB_ENV"
           echo "LOCAL_GID=$(id -g)" >> "$GITHUB_ENV"
       - run: task docs:test
+      - name: Verify the exact candidate manual that passed browser tests
+        if: env.MANUAL_VERSION != ''
+        id: manual-seal
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PLAN_COMMIT"
+          test "$PLAN_RUN" = "$GITHUB_RUN_ID"
+          test "$PLAN_ATTEMPT" = "$GITHUB_RUN_ATTEMPT"
+          digest=$(python3 tools/manual_release.py verify "$MANUAL_VERSION" "$MANUAL_WHEEL_VERSION" \
+            "$PLAN_COMMIT" "$PLAN_RUN" "$PLAN_ATTEMPT" candidate)
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Publish browser cases
         if: ${{ !cancelled() }}
         uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a
@@ -166,15 +250,25 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: common-manual-browser-evidence
+          name: common-manual-browser-evidence-${{ github.run_attempt }}
           path: |
             artifacts/docs-tests.xml
             artifacts/docs/screenshots/
           retention-days: 14
           if-no-files-found: error
   deploy-documentation:
-    needs: [release, publish]
-    if: needs.release.outputs.draft-created == 'true' && needs.publish.result == 'success'
+    needs: [verify, documentation, version, release, publish]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' &&
+      needs.verify.result == 'success' && needs.documentation.result == 'success' &&
+      needs.documentation.outputs.manual-seal != '' &&
+      needs.version.result == 'success' && needs.version.outputs.commit == github.sha &&
+      needs.version.outputs.run-id == github.run_id &&
+      needs.version.outputs.run-attempt == github.run_attempt &&
+      ((github.event_name == 'push' && needs.release.result == 'success' &&
+        needs.publish.result == 'success' && needs.release.outputs.draft-created == 'true') ||
+       (github.event_name == 'workflow_dispatch' && inputs.release_tag != '' &&
+        needs.release.result == 'skipped' && needs.publish.result == 'skipped'))
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -187,18 +281,40 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
-      RELEASE_TAG: ${{ needs.release.outputs.git-tag }}
+      MANUAL_VERSION: ${{ needs.version.outputs.semver-version }}
+      MANUAL_WHEEL_VERSION: ${{ needs.version.outputs.pep440-version }}
+      MANUAL_RELEASE_TAG: ${{ needs.release.outputs.git-tag || inputs.release_tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ needs.release.outputs.git-tag }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
-      - name: Require release tag to match the exact verified commit
+      - name: Download only the exact immutable published release and its wheel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          [[ "$MANUAL_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$MANUAL_WHEEL_VERSION" = "$MANUAL_VERSION"
+          test "$MANUAL_RELEASE_TAG" = "v$MANUAL_VERSION"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$GITHUB_SHA"
+          test "$(git rev-parse --verify "refs/tags/${MANUAL_RELEASE_TAG}^{commit}")" = "$GITHUB_SHA"
+          mkdir -p artifacts/released-wheel
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$MANUAL_RELEASE_TAG" > artifacts/released-wheel/release.json
+          python3 -c 'import json, sys
+          info = json.load(open("artifacts/released-wheel/release.json"))
+          if not (info["tag_name"] == sys.argv[1] and info["draft"] is False and
+                  info["prerelease"] is False and info["immutable"] is True and info["published_at"]):
+              raise SystemExit("Expected the exact immutable published stable release")
+          ' "$MANUAL_RELEASE_TAG"
+          gh release download "$MANUAL_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir artifacts/released-wheel \
+            --pattern "livingproof_common-${MANUAL_VERSION}-py3-none-any.whl" --pattern SHA256SUMS
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: library-reports-ubuntu-24.04-${{ github.run_attempt }}
+          path: artifacts/
       - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e
         with:
           version: '3.54.0'
@@ -209,16 +325,92 @@ jobs:
       - run: task setup
       - run: task docs
       - run: task docs:test
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
+      - name: Bind the production tar to the tested released manual
+        id: pages-package
+        run: |
+          set -euo pipefail
+          python3 tools/manual_release.py seal "$MANUAL_VERSION" "$MANUAL_WHEEL_VERSION" \
+            "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" release
+          cd artifacts/docs/html
+          tar --dereference --hard-dereference -cf "$RUNNER_TEMP/artifact.tar" .
+          digest=$(sha256sum "$RUNNER_TEMP/artifact.tar")
+          echo "tar-sha256=${digest%% *}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        id: pages-artifact
         with:
-          path: artifacts/docs/html
+          name: github-pages-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
+      # Use the same-run Actions artifact client (like deploy-pages), not the REST index.
+      # An exact ID and name must both resolve to the sealed Pages tar before deploying.
+      - name: Require a valid Pages artifact ID
+        shell: bash
+        env:
+          UPLOADED_ID: ${{ steps.pages-artifact.outputs.artifact-id }}
+        run: |
+          [[ "$UPLOADED_ID" =~ ^[1-9][0-9]*$ ]]
+      - name: Read exact Pages artifact by ID
+        id: pages-id-first
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ steps.pages-artifact.outputs.artifact-id }}
+          path: ${{ runner.temp }}/common-pages-id-first
+      - name: Allow the ID lookup to settle
+        if: steps.pages-id-first.outcome == 'failure'
+        run: sleep 4
+      - name: Retry read by ID once
+        id: pages-id-retry
+        if: steps.pages-id-first.outcome == 'failure'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ steps.pages-artifact.outputs.artifact-id }}
+          path: ${{ runner.temp }}/common-pages-id-retry
+      - name: Read exact Pages artifact by name
+        id: pages-name-first
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: github-pages-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/common-pages-name-first
+      - name: Allow the name lookup to settle
+        if: steps.pages-name-first.outcome == 'failure'
+        run: sleep 4
+      - name: Retry read by name once
+        id: pages-name-retry
+        if: steps.pages-name-first.outcome == 'failure'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: github-pages-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/common-pages-name-retry
+      - name: Require matching ID and name readback of the exact tar
+        shell: bash
+        env:
+          EXPECTED_TAR: ${{ steps.pages-package.outputs.tar-sha256 }}
+          EXPECTED_NAME: github-pages-${{ github.run_attempt }}
+          ID_READBACK: ${{ steps.pages-id-first.outcome == 'success' && steps.pages-id-first.outputs.download-path || steps.pages-id-retry.outputs.download-path }}
+          NAME_READBACK: ${{ steps.pages-name-first.outcome == 'success' && steps.pages-name-first.outputs.download-path || steps.pages-name-retry.outputs.download-path }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_TAR" =~ ^[0-9a-f]{64}$ ]]
+          test -n "$ID_READBACK"
+          test -n "$NAME_READBACK"
+          for path in "$ID_READBACK/$EXPECTED_NAME" "$NAME_READBACK"; do
+            test -f "$path/artifact.tar"
+            digest=$(sha256sum "$path/artifact.tar")
+            test "${digest%% *}" = "$EXPECTED_TAR"
+          done
       - name: Require current main before deploying this run's artifact
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE: ${{ github.sha }}
         run: |
+          set -euo pipefail
           current=$(gh api repos/Living-Proof-Labs/livingproof-common/git/ref/heads/main --jq .object.sha)
           test "$current" = "$CANDIDATE"
       - name: Deploy verified manual
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
