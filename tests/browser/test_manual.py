@@ -294,13 +294,18 @@ def test_source_release_license_and_deep_link_context(browser, server):
         article = page.locator('article')
         expect(article.get_by_role('link', name='Documentation home', exact=True).last).to_have_attribute(
             'href', 'https://docs.livingprooflabs.com/')
-        identity = article.get_by_role('link', name='Docs: development', exact=False).last
+        identity = article.get_by_role('link', name=record['manual_label'], exact=False).last
         expect(identity).to_have_attribute('href',
             'https://github.com/Living-Proof-Labs/livingproof-common/tree/' + record['source_commit'])
         expect(article.get_by_role('link', name='Help / report an issue', exact=True).last).to_have_attribute(
             'href', 'https://github.com/Living-Proof-Labs/livingproof-common/issues')
     expect(page.locator('#build-context')).to_have_count(1)
-    expect(page.locator('article')).to_contain_text(record['candidate_package_version'])
-    expect(page.locator('article')).to_contain_text('Published package releases')
+    expect(page.locator('article')).to_contain_text(record['package_version'])
+    if record['channel'] == 'release':
+        expect(page.locator('article').get_by_role('link', name=record['release_tag'])).to_have_attribute(
+            'href', 'https://github.com/Living-Proof-Labs/livingproof-common/releases/tag/'
+            + record['release_tag'])
+    else:
+        expect(page.locator('article')).to_contain_text('Published package releases')
     assert (OUTPUT / 'html/assets/LICENSE.txt').read_bytes() == (ROOT / 'LICENSE').read_bytes()
     page.close()

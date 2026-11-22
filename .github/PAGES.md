@@ -13,15 +13,19 @@ and pull requests use `contents: read`. The parent browser worker owns settings:
 - Configure the `github-pages` environment to permit deployments from `main` only.
 - Leave repository-wide token defaults, domains and other settings unchanged.
 
-The deployment consumes only this run's verified public HTML, after the library
-matrix and browser verification pass. A read-only `gh api` check, authenticated
-with the workflow token, compares the candidate commit to current `main`
-immediately before deploying. The step fails closed when those commits differ
-or the read fails, so `actions/deploy-pages` does not run. Concurrency
-cancels obsolete deployments. No project checkout or code execution happens in
-the deployment job. These safeguards reduce stale publication; a branch can still
-advance after the freshness check, so the newest successful deployment must be
-verified live.
+The release writer waits for the library matrix and the sealed candidate
+manual's browser tests. The deployment renders and tests the manual anew using
+the exact checkout and the matching wheel downloaded from the immutable
+published release. The Pages job verifies the final archive by both same-run
+artifact ID and attempt-qualified name. A read-only `gh api` check,
+authenticated with the workflow token, compares that commit to current `main`
+inside the deployment lock, immediately before publication. The job fails
+closed if any of these checks fail. A branch can still advance after the final
+check, so the successful deployment must be verified live.
+
+For Pages delivery only, use the same workflow on `main` with its existing
+published stable tag. This route does not create a tag or rebuild, edit, or
+republish release assets.
 
 A successful artifact upload is not a verified live manual. Record the deployed
 revision/run/URL and exercise navigation, search and result opening, themes,

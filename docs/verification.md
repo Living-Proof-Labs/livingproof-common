@@ -34,7 +34,8 @@ task names. Browser setup is separate: `task -t Taskfile.runtime.yml docs:setup`
 installs the locked test dependency and matching Chromium. The repository's
 `documentation-test` Docker target supplies browser system libraries for CI.
 
-Download `common-manual-ubuntu-24.04` from the candidate workflow run; previews,
+Download `common-manual-ubuntu-24.04-<attempt>-<version>` from the candidate workflow run;
+previews,
 browser results and screenshots expire after **14 days**. Extract the archive,
 serve its parent over loopback HTTP, and visit `/docs/html/index.html`:
 
@@ -61,6 +62,12 @@ Linux amd64, including mobile emulation; this does not establish real mobile,
 Firefox, Safari, macOS or Windows behavior. Local checks validate assets, anchors,
 search/opening a result, navigation, themes and version context under the project
 base path. External links are checked separately.
+
+Candidate artifacts identify the run attempt and selected version but are never
+deployed. The public manual is rebuilt from the immutable published release's
+exact tested wheel and checksum, then deployed only while its tag still points
+to current main. To retry Pages, run **Library verification and release** on
+main with that existing tag; this path cannot publish packages or create tags.
 
 Each documentation change requires independent artifact review and delivered verification.
 After deployment, check the exact source commit, navigation, deep links, search,
