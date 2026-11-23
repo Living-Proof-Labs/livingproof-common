@@ -21,7 +21,7 @@ local_scheme = "no-local-version"
 path = "hatch_build.py"
 
 [dependency-groups]
-dev = ["pytest==8.4.2", "ruff==0.14.2", "build==1.6.1", "zensical==0.0.73", "coverage==7.17.3"]
+dev = ["pytest==8.4.2", "ruff==0.14.2", "build==1.6.1", "zensical==0.0.73", "coverage==7.17.4"]
 
 docs-test = ["playwright==1.64.1"]
 
