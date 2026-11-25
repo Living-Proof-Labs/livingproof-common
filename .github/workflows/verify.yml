@@ -16,7 +16,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
     permissions:
       contents: read
-    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release-candidate.yml@v9.9.12
+    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release-candidate.yml@v9.9.14
     with:
       replay-tag: ${{ inputs.release_tag || '' }}
   verify:
@@ -137,7 +137,7 @@ jobs:
       needs.documentation.outputs.manual-seal != ''
     permissions:
       contents: write
-    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.9.12
+    uses: Living-Proof-Labs/collaboration-guidelines/.github/workflows/semantic-release.yml@v9.9.14
     with:
       draft-release: true
       expected-version: ${{ needs.version.outputs.version }}
